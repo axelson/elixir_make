@@ -132,9 +132,9 @@ defmodule Mix.Tasks.Compile.ElixirMake do
   and "mix test" commands.
   """
 
-  @return if Version.match?(System.version(), "~> 1.9"), do: {:ok, []}, else: :ok
+  @return if Version.match?(System.version(), "~> 1.9"), do: {:noop, []}, else: :noop
 
-  @spec run(OptionParser.argv()) :: :ok | no_return
+  @spec run(OptionParser.argv()) :: {:noop, []}
   def run(args) do
     config = Mix.Project.config()
     Mix.shell().print_app()
