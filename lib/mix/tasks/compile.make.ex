@@ -172,7 +172,7 @@ defmodule Mix.Tasks.Compile.ElixirMake do
   def up_to_date?(config, task_args) do
     # Ask make if all targets are up to date
     case do_build(config, task_args, ["--question"]) do
-      0 -> true
+      {0, _} -> true
       _ -> false
     end
   end
