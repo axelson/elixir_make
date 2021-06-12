@@ -132,7 +132,8 @@ defmodule Mix.Tasks.Compile.ElixirMake do
   and "mix test" commands.
   """
 
-  @return if Version.match?(System.version(), "~> 1.9"), do: {:noop, []}, else: :noop
+  @return_ok if Version.match?(System.version(), "~> 1.9"), do: {:ok, []}, else: :ok
+  @return_noop if Version.match?(System.version(), "~> 1.9"), do: {:noop, []}, else: :noop
 
   @spec run(OptionParser.argv()) :: {:noop, []}
   def run(args) do
@@ -140,7 +141,9 @@ defmodule Mix.Tasks.Compile.ElixirMake do
     Mix.shell().print_app()
     priv? = File.dir?("priv")
     Mix.Project.ensure_structure()
-    build(config, args)
+
+    up_to_date? = up_to_date?(config, args)
+    if !up_to_date?, do: build(config, args)
 
     # IF there was no priv before and now there is one, we assume
     # the user wants to copy it. If priv already existed and was
@@ -150,7 +153,7 @@ defmodule Mix.Tasks.Compile.ElixirMake do
       Mix.Project.build_structure()
     end
 
-    @return
+    if up_to_date?, do: @return_noop, else: @return_ok
   end
 
   # This is called by Elixir when `mix clean` is run and `:elixir_make` is in
@@ -166,7 +169,26 @@ defmodule Mix.Tasks.Compile.ElixirMake do
     end
   end
 
+  def up_to_date?(config, task_args) do
+    # Ask make if all targets are up to date
+    case do_build(config, task_args, ["--question"]) do
+      0 -> true
+      _ -> false
+    end
+  end
+
   defp build(config, task_args) do
+    case do_build(config, task_args, []) do
+      {0, _} ->
+        :ok
+
+      {exit_status, exec} ->
+        error_msg = Keyword.get(config, :make_error_message, :default) |> os_specific_error_msg()
+        raise_build_error(exec, exit_status, error_msg)
+    end
+  end
+
+  defp do_build(config, task_args, extra_make_args) do
     exec =
       System.get_env("MAKE") ||
         os_specific_executable(Keyword.get(config, :make_executable, :default))
@@ -183,7 +205,6 @@ defmodule Mix.Tasks.Compile.ElixirMake do
     # OTP versions and appears to be a bug. It is being tracked at
     # https://bugs.erlang.org/browse/ERL-175.
     cwd = Keyword.get(config, :make_cwd, ".") |> Path.expand(File.cwd!())
-    error_msg = Keyword.get(config, :make_error_message, :default) |> os_specific_error_msg()
     custom_args = Keyword.get(config, :make_args, [])
 
     if String.contains?(cwd, " ") do
@@ -195,15 +216,10 @@ defmodule Mix.Tasks.Compile.ElixirMake do
     end
 
     base = exec |> Path.basename() |> Path.rootname()
-    args = args_for_makefile(base, makefile) ++ targets ++ custom_args
+    args = args_for_makefile(base, makefile) ++ targets ++ custom_args ++ extra_make_args
 
-    case cmd(exec, args, cwd, env, "--verbose" in task_args) do
-      0 ->
-        :ok
-
-      exit_status ->
-        raise_build_error(exec, exit_status, error_msg)
-    end
+    exit_status = cmd(exec, args, cwd, env, "--verbose" in task_args)
+    {exit_status, exec}
   end
 
   # Runs `exec [args]` in `cwd` and prints the stdout and stderr in real time,
